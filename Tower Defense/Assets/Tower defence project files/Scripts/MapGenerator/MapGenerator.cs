@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Sirenix.OdinInspector;
 using System;
 using Random = UnityEngine.Random;
+using System.Collections;
 
 public class MapGenerator : MonoBehaviour
 {
@@ -17,6 +18,8 @@ public class MapGenerator : MonoBehaviour
     public int numberOfPaths = 3;
     public float minDistanceBetweenStartPoints = 5f; // Adjustable distance in Inspector
     public bool generateObstacles = true;  // Option to generate obstacles
+    public int pathWidth = 2; // Width of the path in nodes
+    public float obstacleDistanceFromPath = 2f; // Adjustable distance between obstacles and the path
 
     public List<Transform> StartPoints => startPoints;
     public List<GameObject> PathObjects => pathObjects;
@@ -35,8 +38,9 @@ public class MapGenerator : MonoBehaviour
 
     int width;
     int height;
+    List<Vector3> reservedPositions = new List<Vector3>();
 
-    void Start() => InitializeMap();
+    void Start() => StartCoroutine(InitializeMap());
 
     public void Clear() => ClearMap();
 
@@ -44,10 +48,10 @@ public class MapGenerator : MonoBehaviour
     void ClearAndRegenerateMap()
     {
         ClearMap();
-        InitializeMap();
+        StartCoroutine(InitializeMap());
     }
 
-    void InitializeMap()
+    IEnumerator InitializeMap()
     {
         gridGraph = AstarPath.active.data.gridGraph;
         width = gridGraph.width;
@@ -63,7 +67,7 @@ public class MapGenerator : MonoBehaviour
         {
             GenerateMap();
         }
-        astar.Scan();  // Re-scan the grid with obstacles and points
+        yield return new WaitForSeconds(1);
         GeneratePaths(() =>
         {
             onMapGenerated?.Invoke();
@@ -72,7 +76,6 @@ public class MapGenerator : MonoBehaviour
 
     void ClearMap()
     {
-        // Remove all obstacles, start points, and end points from the scene
         foreach (GameObject obstacle in obstacles)
         {
             Destroy(obstacle);
@@ -95,6 +98,7 @@ public class MapGenerator : MonoBehaviour
         obstacles.Clear();
         startPoints.Clear();
         pathObjects.Clear();
+        reservedPositions.Clear();
     }
 
     void PlaceStartPointsInFirstColumn()
@@ -103,22 +107,20 @@ public class MapGenerator : MonoBehaviour
         {
             bool placed = false;
             int attempts = 0;
-            const int maxAttempts = 100;  // Maximum attempts to place a start point
+            const int maxAttempts = 100;
 
             while (!placed && attempts < maxAttempts)
             {
                 attempts++;
-                int randomY = Random.Range(0, gridGraph.depth);  // Random Y position within grid height
-                int x = 0;  // First column (x == 0)
+                int randomY = Random.Range(0, gridGraph.depth);
+                int x = 0;
 
-                // Get node at this position
                 GraphNode node = gridGraph.GetNode(x, randomY);
 
-                if (node != null/* && node.Walkable*/)
+                if (node != null)
                 {
                     Vector3 nodePosition = (Vector3)node.position;
 
-                    // Check if this position is at least `minDistanceBetweenStartPoints` away from existing start points
                     bool tooClose = false;
                     foreach (Transform existingStartPoint in startPoints)
                     {
@@ -133,7 +135,8 @@ public class MapGenerator : MonoBehaviour
                     {
                         GameObject gm = Instantiate(startPointPrefab, nodePosition, Quaternion.identity);
                         startPoints.Add(gm.transform);
-                        placed = true;  // Successfully placed the start point
+                        reservedPositions.Add(gm.transform.position);
+                        placed = true;
                     }
                 }
                 else
@@ -148,18 +151,19 @@ public class MapGenerator : MonoBehaviour
             }
         }
     }
+
     void PlaceEndPointInLastColumn()
     {
-        int randomZ = Random.Range(0, gridGraph.depth);  // Random Y position within grid height
-        int x = gridGraph.width - 1;  // Last column (x == width - 1)
+        int randomZ = Random.Range(0, gridGraph.depth);
+        int x = gridGraph.width - 1;
 
-        // Get node at this position
         GraphNode node = gridGraph.GetNode(x, randomZ);
 
-        if (node != null/* && node.Walkable*/)
+        if (node != null)
         {
             Vector3 nodePosition = (Vector3)node.position;
             endPointObj = Instantiate(endPointPrefab, nodePosition, Quaternion.identity);
+            reservedPositions.Add(nodePosition);
         }
         else
         {
@@ -169,7 +173,6 @@ public class MapGenerator : MonoBehaviour
 
     void GenerateMap()
     {
-        HashSet<Vector3> reservedPositions = new HashSet<Vector3>();
         foreach (Transform startPoint in startPoints)
         {
             reservedPositions.Add(startPoint.position);
@@ -178,20 +181,46 @@ public class MapGenerator : MonoBehaviour
         {
             reservedPositions.Add(endPointObj.transform.position);
         }
-
+        int maxTry = 1000;
         for (int i = 0; i < maxObstacles; i++)
         {
             int randomIndex = Random.Range(0, nodes.Count);
             Vector3 position = (Vector3)nodes[randomIndex].position;
-
-            // Ensure position is not reserved
-            if (!reservedPositions.Contains(position))
+            if (maxTry <= 0) return;
+            // Ensure obstacle is at a minimum distance from the path
+            if (!reservedPositions.Contains(position) && IsFarEnoughFromPath(position))
             {
-                GameObject obstacle = Instantiate(obstaclePrefab, position, Quaternion.identity);
+                Debug.Log($"IF");
+                var node = astar.GetNearest(position);
+                GameObject obstacle = Instantiate(obstaclePrefab, new Vector3(position.x, 0, position.z), Quaternion.identity);
                 obstacles.Add(obstacle);
                 reservedPositions.Add(position);
+                node.node.Walkable = false;
+            }
+            else
+            {
+                Debug.Log($"ELSE");
+                i--;
+                maxTry--;
             }
         }
+
+        foreach (var item in astar.ScanAsync())
+        {
+            Debug.Log($"Progress {item.progress}");
+        }
+    }
+
+    bool IsFarEnoughFromPath(Vector3 obstaclePosition)
+    {
+        foreach (Vector3 reservedPos in reservedPositions)
+        {
+            if (Vector3.Distance(obstaclePosition, reservedPos) < obstacleDistanceFromPath)
+            {
+                return false; // Too close to the path
+            }
+        }
+        return true; // Far enough from the path
     }
 
     void GeneratePaths(Action onDone)
@@ -214,13 +243,16 @@ public class MapGenerator : MonoBehaviour
     {
         if (!path.error)
         {
-            Debug.Log("Path found from start to end!");
             foreach (Vector3 point in path.vectorPath)
             {
                 GridNode node = gridGraph.GetNearest(point).node as GridNode;
                 if (node != null)
                 {
+                    reservedPositions.Add((Vector3)node.position);
                     node.Walkable = true;
+
+                    // Reserve nearby nodes to make path wider
+                    ReserveNearbyNodes((Vector3)node.position);
                 }
             }
             VisualizePath(path);
@@ -231,6 +263,23 @@ public class MapGenerator : MonoBehaviour
         }
     }
 
+    void ReserveNearbyNodes(Vector3 center)
+    {
+        for (int x = -pathWidth; x <= pathWidth; x++)
+        {
+            for (int z = -pathWidth; z <= pathWidth; z++)
+            {
+                Vector3 nearbyPos = center + new Vector3(x * gridGraph.nodeSize, 0, z * gridGraph.nodeSize);
+                GraphNode nearbyNode = gridGraph.GetNearest(nearbyPos).node;
+                if (nearbyNode != null)
+                {
+                    reservedPositions.Add((Vector3)nearbyNode.position);
+                    nearbyNode.Walkable = true;
+                }
+            }
+        }
+    }
+
     void VisualizePath(Path path)
     {
         for (int i = 0; i < path.vectorPath.Count - 1; i++)
@@ -238,8 +287,21 @@ public class MapGenerator : MonoBehaviour
             Vector3 startPoint = path.vectorPath[i];
             Vector3 endPoint = path.vectorPath[i + 1];
 
+            // Create the central path visual
             GameObject pathObj = Instantiate(pathPrefab, startPoint, Quaternion.identity);
             pathObjects.Add(pathObj);
+
+            // Create additional visuals for the wider path
+            for (int x = -pathWidth; x <= pathWidth; x++)
+            {
+                for (int z = -pathWidth; z <= pathWidth; z++)
+                {
+                    if (x == 0 && z == 0) continue; // Skip the central path
+                    Vector3 sidePoint = startPoint + new Vector3(x * gridGraph.nodeSize, 0, z * gridGraph.nodeSize);
+                    GameObject sidePathObj = Instantiate(pathPrefab, sidePoint, Quaternion.identity);
+                    pathObjects.Add(sidePathObj);
+                }
+            }
         }
     }
 }
