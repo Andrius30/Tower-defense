@@ -1,6 +1,7 @@
 ﻿using Sirenix.OdinInspector;
 using System.Collections.Generic;
 using System.IO;
+using UnityEditor.U2D.Aseprite;
 using UnityEngine;
 
 public class MapSaverLoader : MonoBehaviour
@@ -83,28 +84,7 @@ public class MapSaverLoader : MonoBehaviour
             string json = File.ReadAllText(filePath);
             MapData mapData = JsonUtility.FromJson<MapData>(json);
 
-            mapGenerator.Clear();
-            foreach (var obstacleData in mapData.obstacles)
-            {
-                GameObject obstacle = Instantiate(mapGenerator.obstaclePrefab, obstacleData.position, Quaternion.identity);
-                mapGenerator.Obstacles.Add(obstacle);
-            }
-            mapGenerator.astar.Scan();
-            foreach (var startPointData in mapData.startPoints)
-            {
-                GameObject startPoint = Instantiate(mapGenerator.startPointPrefab, startPointData.position, Quaternion.identity);
-                mapGenerator.StartPoints.Add(startPoint.transform);
-            }
-            if (mapData.endPoint != null)
-            {
-                mapGenerator.EndPointObject = Instantiate(mapGenerator.endPointPrefab, mapData.endPoint.position, Quaternion.identity);
-            }
-
-            foreach (var path in mapData.pathData)
-            {
-                GameObject gm = Instantiate(mapGenerator.pathPrefab, path.position, Quaternion.identity);
-                mapGenerator.PathObjects.Add(gm);
-            }
+            ClearMapAndInitializeNewMap(mapData);
 
             Debug.Log("Map loaded from: " + filePath);
         }
@@ -113,6 +93,33 @@ public class MapSaverLoader : MonoBehaviour
             Debug.LogError("File not found: " + filePath);
         }
     }
+
+    void ClearMapAndInitializeNewMap(MapData mapData)
+    {
+        mapGenerator.Clear();
+        foreach (var obstacleData in mapData.obstacles)
+        {
+            GameObject obstacle = Instantiate(mapGenerator.obstaclePrefab, obstacleData.position, Quaternion.identity);
+            mapGenerator.Obstacles.Add(obstacle);
+        }
+        mapGenerator.astar.Scan();
+        foreach (var startPointData in mapData.startPoints)
+        {
+            GameObject startPoint = Instantiate(mapGenerator.startPointPrefab, startPointData.position, Quaternion.identity);
+            mapGenerator.StartPoints.Add(startPoint.transform);
+        }
+        if (mapData.endPoint != null)
+        {
+            mapGenerator.EndPointObject = Instantiate(mapGenerator.endPointPrefab, mapData.endPoint.position, Quaternion.identity);
+        }
+
+        foreach (var path in mapData.pathData)
+        {
+            GameObject gm = Instantiate(mapGenerator.pathPrefab, path.position, Quaternion.identity);
+            mapGenerator.PathObjects.Add(gm);
+        }
+    }
+
     public MapData LoadByFileIndex(int index)
     {
         string[] files = GetSaveFiles();
@@ -121,7 +128,9 @@ public class MapSaverLoader : MonoBehaviour
         {
             string filePath = files[index];
             string json = File.ReadAllText(filePath);
-            return JsonUtility.FromJson<MapData>(json);
+            MapData mapData = JsonUtility.FromJson<MapData>(json);
+            ClearMapAndInitializeNewMap(mapData);
+            return mapData;
         }
         else
         {

@@ -44,6 +44,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: e4757a9caffbcad4c81735e47dc0247c, type: 2}
   - {fileID: 11400000, guid: 646b29a2be2c89043b8ede9a485d72d2, type: 2}
   - {fileID: 11400000, guid: eda52383ce5e71c49b99294517b7d993, type: 2}
+  - {fileID: 11400000, guid: e378e4d400d197e438a73be32fdfde87, type: 2}
+  - {fileID: 11400000, guid: 50fe37a778398d84da2c7dd4313dac75, type: 2}
   m_BuildSettings:
     m_CompileScriptsInVirtualMode: 0
     m_CleanupStreamingAssetsAfterBuilds: 1
@@ -85,6 +87,8 @@ MonoBehaviour:
   m_LabelTable:
     m_LabelNames:
     - default
+    - Towers
+    - Tower_Prefabs
   m_SchemaTemplates: []
   m_GroupTemplateObjects:
   - {fileID: 11400000, guid: 5d7066e4db573744599065b35891f409, type: 2}
